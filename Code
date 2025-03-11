@@ -1,0 +1,89 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "DHT.h"
+
+// Define the DHT sensor type and GPIO pin
+#define DHTPIN 21  // Try GPIO21 (or GPIO22) for better stability
+#define DHTTYPE DHT11  // Using DHT11 sensor
+
+DHT dht(DHTPIN, DHTTYPE);
+
+const char* ssid = "Galaxy M13E974";
+const char* password = "xfsy2338";
+
+// ThingSpeak API Endpoint
+const char* serverName = "http://api.thingspeak.com/update";
+
+// API Key for ThingSpeak
+String apiKey = "EZCGXOCFAR7X6TUD";
+
+// Function to map values
+float mapFloat(float x, float in_min, float in_max, float out_min, float out_max) {
+  return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
+
+void setup() {
+  Serial.begin(115200);
+  WiFi.begin(ssid, password);
+  dht.begin();
+
+  Serial.println("Connecting to WiFi...");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nWiFi Connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void loop() {
+  if (WiFi.status() == WL_CONNECTED) {
+    WiFiClient client;
+    HTTPClient http;
+    delay(5000);  // Wait for 10 seconds before next reading
+
+    // Read temperature and humidity
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    if (isnan(t) || isnan(h)) {
+      Serial.println("❌ Failed to read from DHT sensor!");
+      return;
+    }
+
+    // Map temperature and humidity to a specific range (Example: 0-100)
+    float mappedTemp = mapFloat(t, 0, 50, 0, 100);  // Assuming temp range 0°C to 50°C
+    float mappedHumidity = mapFloat(h, 20, 90, 0, 100);  // Assuming humidity range 20% to 90%
+
+    // Ensure values are within limits
+    mappedTemp = constrain(mappedTemp, 0, 100);
+    mappedHumidity = constrain(mappedHumidity, 0, 100);
+
+    Serial.print("🌡️ Temperature: ");
+    Serial.print(t);
+    Serial.print("°C (Mapped: ");
+    Serial.print(mappedTemp);
+    Serial.print(")  💧 Humidity: ");
+    Serial.print(h);
+    Serial.print("% (Mapped: ");
+    Serial.print(mappedHumidity);
+    Serial.println(")");
+
+    // Prepare HTTP POST request
+    String httpRequestData = "api_key=" + apiKey + "&field1=" + String(mappedTemp, 2) + "&field2=" + String(mappedHumidity, 2);
+
+    http.begin(client, serverName);
+    http.addHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    int httpResponseCode = http.POST(httpRequestData);
+
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+
+    http.end();
+  } else {
+    Serial.println("WiFi Disconnected, retrying...");
+  }
+}
